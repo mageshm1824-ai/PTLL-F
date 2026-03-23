@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PTL Round Trip Optimizer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">🚚</div>
+      <div>
+        <div class="logo-text">PTL Optimizer</div>
+        <span class="logo-sub">Round Trip Intelligence</span>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-live">LIVE</span>
+      <span class="badge badge-version">v2.0</span>
+      <button class="btn btn-ghost btn-sm" onclick="printReport()">⬇ Export</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════ PAGE ═══════════════════════════ -->
+<main class="page">
+
+  <!-- ── Section 1: Trip Configuration ── -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <span class="text-cyan">⚙</span> Trip Configuration
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="resetAll()">↺ Reset</button>
+    </div>
+    <div class="card-body">
+      <div class="config-row">
+
+        <!-- Trip Cost -->
+        <div class="form-group">
+          <label class="form-label">Trip Cost (₹)</label>
+          <div class="input-with-prefix">
+            <span class="input-prefix">₹</span>
+            <input class="form-input" type="number" id="tripCost" value="5000" min="0" step="100" oninput="recalculate()" />
+          </div>
+        </div>
+
+        <!-- Trip Revenue (auto-calculated) -->
+        <div class="form-group">
+          <label class="form-label">Trip Revenue (₹) <span style="color:var(--accent-cyan);font-size:10px;letter-spacing:1px;">= KG × Rate</span></label>
+          <div class="input-with-prefix">
+            <span class="input-prefix">₹</span>
+            <input class="form-input" type="text" id="tripRevenue" readonly
+              style="background:var(--bg-base); color:var(--accent-green); cursor:default; font-weight:600;"
+              placeholder="Auto-calculated" />
+          </div>
+        </div>
+
+        <!-- Trip Weight -->
+        <div class="form-group">
+          <label class="form-label">Trip Weight (KG)</label>
+          <input class="form-input" type="number" id="tripWeight" value="500" min="0" step="10" oninput="recalculate()" />
+        </div>
+
+        <!-- RT Threshold -->
+        <div class="form-group">
+          <label class="form-label">RT Eligibility Threshold (KM)</label>
+          <input class="form-input" type="number" id="rtThreshold" value="50" min="0" step="5" oninput="recalculate()" />
+        </div>
+
+        <!-- Margin Rate -->
+        <div class="form-group">
+          <label class="form-label">Margin Rate (per KG)</label>
+          <input class="form-input" type="number" id="marginRate" value="3.9" min="0" step="0.1" oninput="recalculate()" />
+        </div>
+
+        <!-- Max Round Trip KM -->
+        <div class="form-group">
+          <label class="form-label">Max Round Trip KM</label>
+          <input class="form-input" type="number" id="maxRTKm" value="150" min="0" step="10" oninput="recalculate()" />
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 2: Customer Selection ── -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <span class="text-cyan">👥</span> Select Customers for Round Trip
+      </div>
+      <span class="font-mono text-muted" style="font-size:12px" id="selectionCount">0 selected</span>
+    </div>
+    <div class="card-body">
+      <div class="config-row">
+
+        <div class="form-group" style="grid-column: 1 / -1; max-width: 560px;">
+          <label class="form-label">Choose Customers (Multi-Select)</label>
+          <div class="multiselect-wrapper" id="multiselectWrapper">
+            <div class="multiselect-trigger" id="multiselectTrigger" tabindex="0" onclick="toggleDropdown()" onkeydown="handleTriggerKey(event)">
+              <span class="multiselect-trigger-text" id="triggerText">Search and select customers…</span>
+              <span class="multiselect-arrow">▼</span>
+            </div>
+            <div class="multiselect-dropdown" id="multiselectDropdown">
+              <div class="dropdown-search-wrap">
+                <input class="dropdown-search" id="dropdownSearch" type="text" placeholder="Search customer…" oninput="filterDropdown()" />
+              </div>
+              <div class="dropdown-actions">
+                <button class="dropdown-action-btn" onclick="selectAll()">Select All</button>
+                <button class="dropdown-action-btn" onclick="clearAll()">Clear All</button>
+                <button class="dropdown-action-btn" onclick="selectEligible()">Select Eligible Only</button>
+              </div>
+              <div class="dropdown-list" id="dropdownList">
+                <!-- items injected by JS -->
+              </div>
+            </div>
+          </div>
+          <div class="selected-tags" id="selectedTags"></div>
+        </div>
+
+      </div>
+
+      <div class="divider mt-16"></div>
+
+      <div class="actions-row mt-8">
+        <button class="btn btn-primary" onclick="analyzeTrip()">
+          🗺 Analyze Round Trip
+        </button>
+        <button class="btn btn-secondary" onclick="optimizeRoute()">
+          ⚡ Optimize Route
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="openGoogleMapsAll()">
+          🔗 Open All in Maps
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 3: KPI Dashboard ── -->
+  <div id="kpiSection">
+    <div class="section-label">Live Metrics</div>
+    <div class="stats-grid" id="statsGrid">
+
+      <div class="stat-card highlight-cyan">
+        <div class="stat-label">Total Round Trip KM</div>
+        <div class="stat-value cyan" id="statTotalKm">—</div>
+        <div class="stat-sub">selected customers</div>
+      </div>
+
+      <div class="stat-card highlight-amber">
+        <div class="stat-label">Trip Cost</div>
+        <div class="stat-value amber" id="statTripCost">—</div>
+        <div class="stat-sub">adjustable above</div>
+      </div>
+
+      <div class="stat-card highlight-green">
+        <div class="stat-label">Trip Revenue (KG × Rate)</div>
+        <div class="stat-value green" id="statTripRevenue">—</div>
+        <div class="stat-sub">weight × ₹3.9 / kg</div>
+      </div>
+
+      <div class="stat-card highlight-purple">
+        <div class="stat-label">Weight Margin</div>
+        <div class="stat-value purple" id="statMargin">—</div>
+        <div class="stat-sub">= trip revenue</div>
+      </div>
+
+      <div class="stat-card highlight-green">
+        <div class="stat-label">Net Profit</div>
+        <div class="stat-value green" id="statProfit">—</div>
+        <div class="stat-sub">revenue − cost</div>
+      </div>
+
+      <div class="stat-card highlight-cyan">
+        <div class="stat-label">Eligible Customers</div>
+        <div class="stat-value cyan" id="statEligible">—</div>
+        <div class="stat-sub">within RT threshold</div>
+      </div>
+
+      <div class="stat-card highlight-amber">
+        <div class="stat-label">Selected Customers</div>
+        <div class="stat-value amber" id="statSelected">—</div>
+        <div class="stat-sub">for this trip</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-label">Cost per KM</div>
+        <div class="stat-value" id="statCostPerKm" style="color: var(--text-secondary);">—</div>
+        <div class="stat-sub">efficiency metric</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Section 4: Eligibility Result + Route ── -->
+  <div id="resultSection">
+    <!-- filled dynamically -->
+  </div>
+
+  <!-- ── Section 5: Map ── -->
+  <div class="card" id="mapCard">
+    <div class="card-header">
+      <div class="card-title"><span class="text-cyan">🗺</span> Route Map</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost btn-sm" id="mapToggle" onclick="toggleMapMode()">Switch to Street View</button>
+        <button class="btn btn-ghost btn-sm" onclick="openInGoogleMaps()">Open Full Map ↗</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div class="map-container">
+        <div class="map-placeholder" id="mapPlaceholder">
+          <div class="map-placeholder-icon">🗺</div>
+          <p>Select customers and click<br/><strong style="color:var(--accent-cyan);">Analyze Round Trip</strong><br/>to view the optimized route</p>
+        </div>
+        <iframe id="mapIframe" style="display:none;" allowfullscreen loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade">
+        </iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 6: All Customers Table ── -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="text-cyan">📋</span> Customer Location Master</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input class="form-input" style="max-width:220px; padding:7px 12px; font-size:12px;" type="text" placeholder="Filter table…" oninput="filterTable(this.value)" />
+        <span class="font-mono text-muted" style="font-size:11px;" id="tableCount"></span>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div class="table-wrap">
+        <table id="masterTable">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>City</th>
+              <th>Pincode</th>
+              <th>Mode</th>
+              <th>One-Way KM</th>
+              <th>Round Trip KM</th>
+              <th>RT Eligible</th>
+              <th>Weight Margin</th>
+              <th>Maps Link</th>
+              <th>Add to Trip</th>
+            </tr>
+          </thead>
+          <tbody id="masterTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══════════════════════════ SNACKBAR ═══════════════════════════ -->
+<div class="snackbar" id="snackbar">
+  <span id="snackbarIcon">✓</span>
+  <span id="snackbarMsg">Done</span>
+</div>
+
+<!-- ═══════════════════════════ SCRIPT ═══════════════════════════ -->
+<script>
+// ════════════════════════════════════════════════════
+//  CUSTOMER DATA  (from Excel master file)
+// ════════════════════════════════════════════════════
+const CUSTOMERS = [
+  { id:  1, name: "APTIV COMPONENTS",                          city: "Vallam",            pincode: "602105", mode: "LTL", km: 17.4, link: "https://maps.app.goo.gl/Uxuqgf8Z4Mi87dEK8", lat: 12.9830, lng: 79.9867 },
+  { id:  2, name: "APTIV COMPONENTS INDIA PRIVATE",            city: "Walajabad",         pincode: "631605", mode: "LTL", km: 34.8, link: "https://maps.app.goo.gl/q2eXpjNjHG65W9ra9", lat: 12.8437, lng: 79.9310 },
+  { id:  3, name: "Force Motors Ltd (Sriperumbudur)",          city: "SRIPERUMBUDUR",     pincode: "602106", mode: "LTL", km: 17.0, link: "https://maps.app.goo.gl/3Lf4z28xF1aWWsnz6", lat: 12.9818, lng: 79.9742 },
+  { id:  4, name: "Force Motors Ltd (Kanchipuram)",            city: "Kanchipuram",       pincode: "602106", mode: "LTL", km: 17.0, link: "https://maps.app.goo.gl/3Lf4z28xF1aWWsnz6", lat: 12.9818, lng: 79.9742 },
+  { id:  5, name: "Glovis India Pvt Ltd (Mannur)",             city: "MANNUR",            pincode: "602105", mode: "LTL", km: 13.2, link: "https://maps.app.goo.gl/rYjjaWwBVhH34H8EA", lat: 13.0024, lng: 79.9638 },
+  { id:  6, name: "Glovis India Pvt Ltd (Kanchipuram)",        city: "Kanchipuram",       pincode: "602105", mode: "LTL", km: 13.2, link: "https://maps.app.goo.gl/v9VNKGRqvBWSJYXg6", lat: 12.8352, lng: 79.7036 },
+  { id:  7, name: "Greaves Cotton Limited",                    city: "THIRUVALLUR",       pincode: "601201", mode: "LTL", km: 68.9, link: "https://maps.app.goo.gl/bWHdZFgGguhzvUkR9", lat: 13.1939, lng: 80.1905 },
+  { id:  8, name: "HANON AUTOMOTIVE SYSTEMS",                  city: "CHENGALPET",        pincode: "603001", mode: "LTL", km: null, link: null,                                           lat: 12.6921, lng: 79.9768 },
+  { id:  9, name: "Hyundai Motor India (Irungattukottai)",     city: "Irungattukottai",   pincode: "602117", mode: "LTL", km: null, link: null,                                           lat: 12.9985, lng: 79.9673 },
+  { id: 10, name: "Hyundai Motor India (Sriperumpudur)",       city: "Sriperumpudur",     pincode: "602105", mode: "LTL", km: 12.4, link: "https://maps.app.goo.gl/p5LzbhrsAsxmUGDr7", lat: 12.9763, lng: 79.9685 },
+  { id: 11, name: "Kwang Jin India",                           city: "Sriperumbudur",     pincode: "602105", mode: "LTL", km: null, link: null,                                           lat: 12.9741, lng: 79.9700 },
+  { id: 12, name: "MINDA CORPORATION LIMITED",                 city: "Kanchipuram",       pincode: "602105", mode: "LTL", km: 11.1, link: "https://maps.app.goo.gl/BcnZrUAsJMhQAJQP9", lat: 12.9980, lng: 79.9720 },
+  { id: 13, name: "MOTHERSON SUMI (Kuruvanmedu)",              city: "Kuruvanmedu",       pincode: "603204", mode: "LTL", km: 36.0, link: "https://maps.app.goo.gl/Ttk1XmqMt1v5qgXa9", lat: 12.8611, lng: 80.0367 },
+  { id: 14, name: "MOTHERSON SUMI (Kattavakkam)",              city: "Kattavakkam",       pincode: "631604", mode: "LTL", km: 36.5, link: "https://maps.app.goo.gl/gAGG4YpihTY3AiU67", lat: 12.8530, lng: 79.9680 },
+  { id: 15, name: "MOTHERSON SUMI (Uthukadu)",                 city: "UTHUKADU",          pincode: "631605", mode: "LTL", km: 39.4, link: "https://maps.app.goo.gl/peijbV3tY29an29f6", lat: 12.8390, lng: 79.9140 },
+  { id: 16, name: "MOTHERSON SUMI (Vadakkupattu/Oragadam)",    city: "Vadakkupattu",      pincode: "602118", mode: "LTL", km: 25.5, link: "https://maps.app.goo.gl/Ju4zPNzpvyw44HgU9", lat: 12.8970, lng: 79.9440 },
+  { id: 17, name: "PCA AUTOMOBILES",                           city: "THIRUVALLUR",       pincode: "631203", mode: "LTL", km: null, link: null,                                           lat: 13.1407, lng: 79.9073 },
+  { id: 18, name: "RENAULT NISSAN",                            city: "ORAGADAM",          pincode: "602118", mode: "LTL", km: 22.8, link: "https://maps.app.goo.gl/hHRQLR1rehg3Bg6s9", lat: 12.8954, lng: 79.9456 },
+  { id: 19, name: "Royal Enfield External WH (Oragadam)",     city: "ORAGADAM",          pincode: "602118", mode: "LTL", km: 26.9, link: "https://maps.app.goo.gl/VwJm8hqZX8Te4Key7", lat: 12.9120, lng: 79.9400 },
+  { id: 20, name: "Royal Enfield External WH (Walajabad)",    city: "Walajabad",         pincode: "631605", mode: "LTL", km: 29.1, link: "https://maps.app.goo.gl/KMAfVbd2Uaq2VDiL8", lat: 12.8437, lng: 79.9310 },
+  { id: 21, name: "Stellantis India (Irungattukottai)",        city: "Irungattukottai",   pincode: "602117", mode: "LTL", km:  1.0, link: null,                                           lat: 12.9985, lng: 79.9673 },
+  { id: 22, name: "Stellantis India (Thiruvallur)",            city: "THIRUVALLUR",       pincode: "631203", mode: "LTL", km: 27.8, link: null,                                           lat: 13.1407, lng: 79.9073 },
+  { id: 23, name: "Turbo Energy PVT LTD",                     city: "Paiyanoor",         pincode: "603104", mode: "LTL", km: 63.8, link: "https://maps.app.goo.gl/Qjqc4kubEtvSzoSM6", lat: 12.7337, lng: 80.2205 },
+  { id: 24, name: "YAZAKI INDIA (Chengalpattu)",               city: "CHENGALPATTU",      pincode: "603209", mode: "LTL", km: 62.0, link: "https://maps.app.goo.gl/V5BHk7fmojBXDZX66", lat: 12.6921, lng: 79.9768 },
+  { id: 25, name: "YAZAKI INDIA (Kodithandalam/Walajabad)",    city: "Kodithandalam",     pincode: "631604", mode: "LTL", km: 63.2, link: "https://maps.app.goo.gl/Y5JPAY4Wm2cDBJ8EA", lat: 12.8530, lng: 79.9680 },
+];
+
+// Origin depot (Chennai)
+const ORIGIN = { name: "Chennai Depot (Origin)", lat: 13.0827, lng: 80.2707 };
+
+// ════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════
+let selectedIds  = new Set();
+let lastAnalysis = null;
+
+// ════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  renderDropdownItems(CUSTOMERS);
+  renderMasterTable();
+  recalculate();
+  document.addEventListener('click', closeDropdownOnOutsideClick);
+});
+
+// ════════════════════════════════════════════════════
+//  DROPDOWN
+// ════════════════════════════════════════════════════
+function toggleDropdown() {
+  const dropdown = document.getElementById('multiselectDropdown');
+  const trigger  = document.getElementById('multiselectTrigger');
+  const isOpen   = dropdown.classList.contains('open');
+  if (!isOpen) {
+    dropdown.classList.add('open');
+    trigger.classList.add('open');
+    setTimeout(() => document.getElementById('dropdownSearch').focus(), 50);
+  } else {
+    dropdown.classList.remove('open');
+    trigger.classList.remove('open');
+  }
+}
+
+function closeDropdownOnOutsideClick(e) {
+  if (!document.getElementById('multiselectWrapper').contains(e.target)) {
+    document.getElementById('multiselectDropdown').classList.remove('open');
+    document.getElementById('multiselectTrigger').classList.remove('open');
+  }
+}
+
+function handleTriggerKey(e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDropdown(); }
+  if (e.key === 'Escape') {
+    document.getElementById('multiselectDropdown').classList.remove('open');
+    document.getElementById('multiselectTrigger').classList.remove('open');
+  }
+}
+
+function renderDropdownItems(list) {
+  const container = document.getElementById('dropdownList');
+  container.innerHTML = list.map(c => {
+    const rtKm = c.km != null ? (c.km * 2).toFixed(1) : 'N/A';
+    const eligFmt = c.km != null ? (c.km * 2 <= parseFloat(document.getElementById('maxRTKm').value || 150) ? '✓ Eligible' : '✗ Over limit') : 'No KM data';
+    return `
+    <div class="dropdown-item ${selectedIds.has(c.id) ? 'selected' : ''}" onclick="toggleCustomer(${c.id})" id="ditem-${c.id}">
+      <div class="dropdown-checkbox"></div>
+      <div class="dropdown-item-info">
+        <div class="dropdown-item-name">${c.name}</div>
+        <div class="dropdown-item-meta">${c.city} · ${c.pincode} · ${eligFmt}</div>
+      </div>
+      <div class="dropdown-item-kms">${c.km != null ? c.km + ' km' : '—'}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('tableCount').textContent = `${CUSTOMERS.length} records`;
+}
+
+function filterDropdown() {
+  const q = document.getElementById('dropdownSearch').value.toLowerCase();
+  const filtered = CUSTOMERS.filter(c => c.name.toLowerCase().includes(q) || c.city.toLowerCase().includes(q) || c.pincode.includes(q));
+  renderDropdownItems(filtered);
+}
+
+function toggleCustomer(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else                       selectedIds.add(id);
+  syncDropdownUI();
+  renderSelectedTags();
+  updateSelectionCount();
+  recalculate();
+}
+
+function syncDropdownUI() {
+  CUSTOMERS.forEach(c => {
+    const el = document.getElementById(`ditem-${c.id}`);
+    if (el) el.classList.toggle('selected', selectedIds.has(c.id));
+  });
+  const triggerText = document.getElementById('triggerText');
+  if (selectedIds.size === 0) {
+    triggerText.textContent = 'Search and select customers…';
+    triggerText.classList.remove('has-selection');
+  } else {
+    const names = CUSTOMERS.filter(c => selectedIds.has(c.id)).map(c => c.name);
+    triggerText.textContent = names.length <= 2 ? names.join(', ') : `${names.slice(0,2).join(', ')} +${names.length - 2} more`;
+    triggerText.classList.add('has-selection');
+  }
+}
+
+function renderSelectedTags() {
+  const wrap = document.getElementById('selectedTags');
+  const selected = CUSTOMERS.filter(c => selectedIds.has(c.id));
+  wrap.innerHTML = selected.map(c => `
+    <span class="selected-tag">
+      ${c.name.split(' ').slice(0,3).join(' ')}
+      <span class="tag-remove" onclick="toggleCustomer(${c.id})">×</span>
+    </span>`).join('');
+}
+
+function updateSelectionCount() {
+  document.getElementById('selectionCount').textContent = `${selectedIds.size} selected`;
+}
+
+function selectAll() {
+  CUSTOMERS.forEach(c => selectedIds.add(c.id));
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount(); recalculate();
+}
+
+function clearAll() {
+  selectedIds.clear();
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount(); recalculate();
+}
+
+function selectEligible() {
+  const maxRT = parseFloat(document.getElementById('maxRTKm').value || 150);
+  CUSTOMERS.forEach(c => {
+    if (c.km != null && c.km * 2 <= maxRT) selectedIds.add(c.id);
+  });
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount(); recalculate();
+}
+
+// Add from table row
+function addToTripFromTable(id) {
+  selectedIds.add(id);
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount(); recalculate();
+  showSnackbar('✓', `Customer added to trip`, 'success');
+}
+
+// ════════════════════════════════════════════════════
+//  RECALCULATE KPIs
+// ════════════════════════════════════════════════════
+function recalculate() {
+  const tripCost   = parseFloat(document.getElementById('tripCost').value)   || 0;
+  const tripWeight = parseFloat(document.getElementById('tripWeight').value) || 0;
+  const marginRate = parseFloat(document.getElementById('marginRate').value) || 3.9;
+  const maxRT      = parseFloat(document.getElementById('maxRTKm').value)    || 150;
+
+  // Revenue = weight x rate (auto-calculated)
+  const tripRevenue = tripWeight * marginRate;
+  document.getElementById('tripRevenue').value = tripRevenue.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+  const selectedCustomers = CUSTOMERS.filter(c => selectedIds.has(c.id));
+  const totalKm       = selectedCustomers.reduce((s, c) => s + (c.km != null ? c.km * 2 : 0), 0);
+  const profit        = tripRevenue - tripCost;
+  const costPerKm     = totalKm > 0 ? tripCost / totalKm : 0;
+  const eligibleCount = CUSTOMERS.filter(c => c.km != null && c.km * 2 <= maxRT).length;
+
+  set('statTotalKm',    totalKm > 0 ? totalKm.toFixed(1) + ' km' : '—');
+  set('statTripCost',   '₹' + fmt(tripCost));
+  set('statTripRevenue','₹' + fmt(tripRevenue));
+  set('statMargin',     '₹' + fmt(tripRevenue));
+  set('statProfit',     (profit >= 0 ? '₹' : '-₹') + fmt(Math.abs(profit)));
+  set('statEligible',   eligibleCount);
+  set('statSelected',   selectedIds.size);
+  set('statCostPerKm',  totalKm > 0 ? '₹' + costPerKm.toFixed(1) + '/km' : '—');
+
+  const profitEl = document.getElementById('statProfit');
+  profitEl.className = 'stat-value ' + (profit >= 0 ? 'green' : 'red');
+
+  renderMasterTable();
+}
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+// ════════════════════════════════════════════════════
+//  MASTER TABLE
+// ════════════════════════════════════════════════════
+function renderMasterTable(filter = '') {
+  const maxRT      = parseFloat(document.getElementById('maxRTKm').value) || 150;
+  const marginRate = parseFloat(document.getElementById('marginRate').value) || 3.9;
+  const tripWeight = parseFloat(document.getElementById('tripWeight').value) || 0;
+  const tbody = document.getElementById('masterTableBody');
+  const q     = filter.toLowerCase();
+
+  const list = q ? CUSTOMERS.filter(c => c.name.toLowerCase().includes(q) || c.city.toLowerCase().includes(q) || c.pincode.includes(q)) : CUSTOMERS;
+
+  tbody.innerHTML = list.map(c => {
+    const rtKm     = c.km != null ? (c.km * 2).toFixed(1) : null;
+    const eligible = rtKm != null && parseFloat(rtKm) <= maxRT;
+    const margin   = (tripWeight * marginRate).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+    return `<tr>
+      <td style="font-weight:500; max-width:200px; white-space:normal; line-height:1.3">${c.name}</td>
+      <td class="td-muted">${c.city}</td>
+      <td class="td-mono td-muted">${c.pincode}</td>
+      <td><span class="pill pill-cyan">${c.mode}</span></td>
+      <td class="td-mono">${c.km != null ? c.km + ' km' : '<span class="td-muted">N/A</span>'}</td>
+      <td class="td-mono text-amber">${rtKm != null ? rtKm + ' km' : '<span class="td-muted">N/A</span>'}</td>
+      <td>${
+        c.km == null
+          ? '<span class="pill pill-amber">No KM Data</span>'
+          : eligible
+            ? '<span class="pill pill-green">✓ Eligible</span>'
+            : '<span class="pill pill-red">✗ Not Eligible</span>'
+      }</td>
+      <td class="td-mono text-purple">₹${margin}</td>
+      <td>${c.link ? `<a href="${c.link}" target="_blank" class="link-btn">📍 View</a>` : '<span class="td-muted">—</span>'}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" style="padding:4px 10px; font-size:11px;" onclick="addToTripFromTable(${c.id})">
+          + Add
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable(q) {
+  renderMasterTable(q);
+}
+
+// ════════════════════════════════════════════════════
+//  ANALYZE TRIP
+// ════════════════════════════════════════════════════
+function analyzeTrip() {
+  if (selectedIds.size === 0) { showSnackbar('⚠', 'Select at least one customer first', ''); return; }
+
+  const maxRT    = parseFloat(document.getElementById('maxRTKm').value) || 150;
+  const selected = CUSTOMERS.filter(c => selectedIds.has(c.id));
+  const totalKm  = selected.reduce((s, c) => s + (c.km != null ? c.km * 2 : 0), 0);
+  const eligible = selected.every(c => c.km == null || c.km * 2 <= maxRT);
+  const noKmCustomers = selected.filter(c => c.km == null);
+  const overLimit     = selected.filter(c => c.km != null && c.km * 2 > maxRT);
+
+  // Eligibility banner
+  const resultSection = document.getElementById('resultSection');
+  let bannerClass, bannerIcon, bannerTitle, bannerMsg, badgeClass, badgeText;
+
+  if (eligible && noKmCustomers.length === 0) {
+    bannerClass = 'eligible'; bannerIcon = '✅';
+    bannerTitle = 'ROUND TRIP ELIGIBLE';
+    bannerMsg   = `All ${selected.length} selected customers are within the ${maxRT} km round trip limit. Total distance: ${totalKm.toFixed(1)} km.`;
+    badgeClass  = 'badge-eligible'; badgeText = 'ELIGIBLE';
+  } else if (overLimit.length > 0) {
+    bannerClass = 'not-eligible'; bannerIcon = '❌';
+    bannerTitle = 'NOT FULLY ELIGIBLE';
+    bannerMsg   = `${overLimit.length} customer(s) exceed the ${maxRT} km round trip limit. Review route below.`;
+    badgeClass  = 'badge-not-eligible'; badgeText = 'REVIEW NEEDED';
+  } else {
+    bannerClass = 'pending'; bannerIcon = '⚠️';
+    bannerTitle = 'PARTIAL DATA';
+    bannerMsg   = `${noKmCustomers.length} customer(s) have no KM data. Verify before finalising trip.`;
+    badgeClass  = 'badge-pending'; badgeText = 'INCOMPLETE DATA';
+  }
+
+  // Route steps
+  const routeSteps = [
+    `<div class="route-step"><div class="step-dot origin">🏁</div><div class="step-info"><div class="step-name">Chennai Depot (Origin)</div><div class="step-meta">Starting point</div></div><div class="step-kms">0 km</div></div>`
+  ].concat(selected.map((c, i) => {
+    const rtKm = c.km != null ? (c.km * 2).toFixed(1) + ' km RT' : 'No KM data';
+    const dotClass = c.km == null ? 'waypoint' : (c.km * 2 <= maxRT ? 'waypoint' : 'destination');
+    return `<div class="route-step">
+      <div class="step-dot ${dotClass}">${i+1}</div>
+      <div class="step-info">
+        <div class="step-name">${c.name}</div>
+        <div class="step-meta">${c.city} · ${c.pincode}${c.link ? ` · <a href="${c.link}" target="_blank" class="link-btn">📍 Maps</a>` : ''}</div>
+      </div>
+      <div class="step-kms">${rtKm}</div>
+    </div>`;
+  })).concat([
+    `<div class="route-step"><div class="step-dot destination">🏁</div><div class="step-info"><div class="step-name">Return to Chennai Depot</div><div class="step-meta">End of round trip</div></div><div class="step-kms">${totalKm.toFixed(1)} km total</div></div>`
+  ]);
+
+  resultSection.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="text-cyan">📊</span> Round Trip Analysis</div>
+      </div>
+      <div class="card-body">
+        <div class="eligibility-banner ${bannerClass}">
+          <div class="eligibility-icon">${bannerIcon}</div>
+          <div class="eligibility-text">
+            <h3>${bannerTitle}</h3>
+            <p>${bannerMsg}</p>
+          </div>
+          <span class="eligibility-badge ${badgeClass}">${badgeText}</span>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <div class="section-label">Optimized Route Order</div>
+            <div class="route-steps">${routeSteps.join('')}</div>
+          </div>
+          <div>
+            <div class="section-label">Per-Customer Breakdown</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>One-Way</th>
+                    <th>Round Trip</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${selected.map(c => {
+                    const rtKm = c.km != null ? (c.km * 2).toFixed(1) : null;
+                    const ok   = rtKm != null && parseFloat(rtKm) <= maxRT;
+                    return `<tr>
+                      <td style="font-size:12px; max-width:150px; white-space:normal; line-height:1.3;">${c.name}</td>
+                      <td class="td-mono">${c.km != null ? c.km + ' km' : '—'}</td>
+                      <td class="td-mono text-amber">${rtKm != null ? rtKm + ' km' : '—'}</td>
+                      <td>${
+                        rtKm == null
+                          ? '<span class="pill pill-amber">No Data</span>'
+                          : ok
+                            ? '<span class="pill pill-green">✓ OK</span>'
+                            : '<span class="pill pill-red">✗ Over</span>'
+                      }</td>
+                    </tr>`;
+                  }).join('')}
+                  <tr style="background:var(--bg-raised);">
+                    <td style="font-weight:700;">TOTAL</td>
+                    <td class="td-mono text-cyan font-mono">${(totalKm/2).toFixed(1)} km</td>
+                    <td class="td-mono text-amber font-mono">${totalKm.toFixed(1)} km</td>
+                    <td><span class="pill ${eligible ? 'pill-green' : 'pill-red'}">${eligible ? '✓ Eligible' : '✗ Review'}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Load map
+  loadRouteMap(selected);
+  showSnackbar('✅', 'Analysis complete!', 'success');
+}
+
+// ════════════════════════════════════════════════════
+//  ROUTE OPTIMIZATION (nearest-neighbour heuristic)
+// ════════════════════════════════════════════════════
+function optimizeRoute() {
+  if (selectedIds.size === 0) { showSnackbar('⚠', 'Select customers first', ''); return; }
+  const selected = CUSTOMERS.filter(c => selectedIds.has(c.id));
+  const hasCoords = selected.filter(c => c.lat && c.lng);
+  if (hasCoords.length < 2) { analyzeTrip(); return; }
+
+  // Nearest neighbour from origin
+  let current = { lat: ORIGIN.lat, lng: ORIGIN.lng };
+  let remaining = [...hasCoords];
+  const ordered = [];
+
+  while (remaining.length > 0) {
+    let nearestIdx = 0;
+    let nearestDist = haversine(current, remaining[0]);
+    for (let i = 1; i < remaining.length; i++) {
+      const d = haversine(current, remaining[i]);
+      if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+    }
+    ordered.push(remaining[nearestIdx]);
+    current = remaining[nearestIdx];
+    remaining.splice(nearestIdx, 1);
+  }
+
+  // Re-order selectedIds to match optimized route
+  selectedIds.clear();
+  ordered.forEach(c => selectedIds.add(c.id));
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount();
+  analyzeTrip();
+  showSnackbar('⚡', 'Route optimized using nearest-neighbour!', 'success');
+}
+
+function haversine(a, b) {
+  const R = 6371, toRad = x => x * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const aa = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+}
+
+// ════════════════════════════════════════════════════
+//  MAP
+// ════════════════════════════════════════════════════
+let streetViewMode = false;
+
+function loadRouteMap(selected) {
+  const iframe   = document.getElementById('mapIframe');
+  const placeholder = document.getElementById('mapPlaceholder');
+  const withLink = selected.filter(c => c.link);
+
+  placeholder.style.display = 'none';
+  iframe.style.display      = 'block';
+
+  // Build Google Maps embed with waypoints
+  const withCoords = selected.filter(c => c.lat && c.lng);
+  if (withCoords.length === 0) {
+    iframe.src = `https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d248849.88584551975!2d80.2707!3d13.0827!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sin!4v1234567890`;
+    return;
+  }
+
+  const origin      = `${ORIGIN.lat},${ORIGIN.lng}`;
+  const destination = `${ORIGIN.lat},${ORIGIN.lng}`;
+  const waypoints   = withCoords.map(c => `${c.lat},${c.lng}`).join('|');
+
+  const mapsUrl = `https://www.google.com/maps/embed/v1/directions?key=AIzaSyD-placeholder&origin=${origin}&destination=${destination}&waypoints=${waypoints}&mode=driving`;
+
+  // Fallback to simple view map showing all markers
+  const center = withCoords[0];
+  const markers = withCoords.map(c => `markers=color:red%7C${c.lat},${c.lng}`).join('&');
+  const fallbackUrl = `https://maps.google.com/maps?q=${center.lat},${center.lng}&z=10&output=embed`;
+
+  // Use Google Maps embed with location search for origin + all destinations
+  const allLocs = withCoords.map(c => encodeURIComponent(`${c.lat},${c.lng}`)).join('/');
+  const gmDirectionsEmbed = buildGmapsEmbed(withCoords);
+  iframe.src = gmDirectionsEmbed;
+}
+
+function buildGmapsEmbed(customers) {
+  // Build a map that shows all locations
+  if (customers.length === 1) {
+    return `https://maps.google.com/maps?q=${customers[0].lat},${customers[0].lng}&z=14&output=embed`;
+  }
+  const centerLat = customers.reduce((s, c) => s + c.lat, 0) / customers.length;
+  const centerLng = customers.reduce((s, c) => s + c.lng, 0) / customers.length;
+  const q = customers.map(c => `${c.lat},${c.lng}`).join('%20to%20');
+  return `https://maps.google.com/maps?saddr=${ORIGIN.lat},${ORIGIN.lng}&daddr=${customers.map(c => `${c.lat},${c.lng}`).join('+to:')}&output=embed`;
+}
+
+function toggleMapMode() {
+  streetViewMode = !streetViewMode;
+  document.getElementById('mapToggle').textContent = streetViewMode ? 'Switch to Map View' : 'Switch to Street View';
+}
+
+function openInGoogleMaps() {
+  const selected = CUSTOMERS.filter(c => selectedIds.has(c.id) && c.lat && c.lng);
+  if (selected.length === 0) { showSnackbar('⚠', 'No customers with coordinates selected', ''); return; }
+  const url = `https://www.google.com/maps/dir/${ORIGIN.lat},${ORIGIN.lng}/${selected.map(c=>`${c.lat},${c.lng}`).join('/')}/${ORIGIN.lat},${ORIGIN.lng}`;
+  window.open(url, '_blank');
+}
+
+function openGoogleMapsAll() {
+  const links = CUSTOMERS.filter(c => selectedIds.has(c.id) && c.link);
+  if (links.length === 0) { showSnackbar('⚠', 'No map links available for selected customers', ''); return; }
+  links.slice(0,5).forEach(c => window.open(c.link, '_blank'));
+  if (links.length > 5) showSnackbar('ℹ', `Opened first 5 of ${links.length} maps`, '');
+}
+
+// ════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════
+function resetAll() {
+  selectedIds.clear();
+  syncDropdownUI(); renderSelectedTags(); updateSelectionCount();
+  document.getElementById('resultSection').innerHTML = '';
+  document.getElementById('mapIframe').style.display = 'none';
+  document.getElementById('mapPlaceholder').style.display = 'flex';
+  recalculate();
+  showSnackbar('↺', 'Reset complete', '');
+}
+
+function showSnackbar(icon, msg, type) {
+  const sb = document.getElementById('snackbar');
+  document.getElementById('snackbarIcon').textContent = icon;
+  document.getElementById('snackbarMsg').textContent  = msg;
+  sb.className = `snackbar show ${type}`;
+  clearTimeout(sb._timer);
+  sb._timer = setTimeout(() => sb.classList.remove('show'), 3000);
+}
+
+function printReport() {
+  window.print();
+}
+</script>
+
+</body>
+</html>
